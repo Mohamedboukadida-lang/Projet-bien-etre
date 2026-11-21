@@ -3,6 +3,7 @@ import 'package:fitnessapp/config/api_config.dart';
 import 'package:fitnessapp/service/api_client.dart';
 import 'package:fitnessapp/service/wellbeing_service.dart';
 import 'package:fitnessapp/utils/app_colors.dart';
+import 'package:fitnessapp/view/profile/widgets/edit_body_sheet.dart';
 import 'package:fitnessapp/view/profile/widgets/setting_row.dart';
 import 'package:fitnessapp/view/profile/widgets/title_subtitle_cell.dart';
 import 'package:flutter/material.dart';
@@ -22,25 +23,53 @@ class UserProfile extends StatefulWidget {
 class _UserProfileState extends State<UserProfile> {
   bool positive = false;
 
-  /// The user's name from the back-end; null while loading.
-  String? _name;
+  late final WellbeingService _service = widget.wellbeingService ?? WellbeingService();
+
+  /// The user from the back-end; null while loading or if unavailable.
+  AppUser? _user;
+  bool _loadFailed = false;
+
+  String get _name {
+    if (_user != null) return _user!.name.isEmpty ? "Name not set" : _user!.name;
+    return _loadFailed ? "Name unavailable" : "…";
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadName();
+    _loadUser();
   }
 
-  Future<void> _loadName() async {
-    String name;
+  Future<void> _loadUser() async {
     try {
-      final user = await (widget.wellbeingService ?? WellbeingService())
-          .fetchUser(ApiConfig.userId);
-      name = user.name.isEmpty ? "Name not set" : user.name;
+      final user = await _service.fetchUser(ApiConfig.userId);
+      if (mounted) setState(() => _user = user);
     } on ApiException {
-      name = "Name unavailable";
+      if (mounted) setState(() => _loadFailed = true);
     }
-    if (mounted) setState(() => _name = name);
+  }
+
+  Future<void> _editBody() async {
+    final update = await showEditBodySheet(context, _user);
+    if (update == null || !mounted) return;
+    try {
+      final user = await _service.updateBody(ApiConfig.userId,
+          heightCm: update.heightCm,
+          weightKg: update.weightKg,
+          dateOfBirth: update.dateOfBirth);
+      if (!mounted) return;
+      setState(() => _user = user);
+      _toast("Profile updated");
+    } on ApiException catch (e) {
+      _toast(e.message);
+    }
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   List accountArr = [
@@ -133,7 +162,7 @@ class _UserProfileState extends State<UserProfile> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _name ?? "…",
+                          _name,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppColors.blackColor,
@@ -157,7 +186,8 @@ class _UserProfileState extends State<UserProfile> {
                     child: RoundButton(
                       title: "Edit",
                       type: RoundButtonType.primaryBG,
-                      onPressed: () {},
+                      // Body data can only be saved once the user has loaded.
+                      onPressed: _user == null ? () {} : _editBody,
                     ),
                   )
                 ],
@@ -165,11 +195,11 @@ class _UserProfileState extends State<UserProfile> {
               const SizedBox(
                 height: 15,
               ),
-              const Row(
+              Row(
                 children: [
                   Expanded(
                     child: TitleSubtitleCell(
-                      title: "180cm",
+                      title: formatMeasure(_user?.heightCm, "cm"),
                       subtitle: "Height",
                     ),
                   ),
@@ -178,7 +208,7 @@ class _UserProfileState extends State<UserProfile> {
                   ),
                   Expanded(
                     child: TitleSubtitleCell(
-                      title: "65kg",
+                      title: formatMeasure(_user?.weightKg, "kg"),
                       subtitle: "Weight",
                     ),
                   ),
@@ -187,7 +217,9 @@ class _UserProfileState extends State<UserProfile> {
                   ),
                   Expanded(
                     child: TitleSubtitleCell(
-                      title: "22yo",
+                      title: _user?.ageOn(DateTime.now()) == null
+                          ? "–"
+                          : "${_user!.ageOn(DateTime.now())}yo",
                       subtitle: "Age",
                     ),
                   ),
