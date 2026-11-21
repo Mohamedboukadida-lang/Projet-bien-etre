@@ -1,56 +1,20 @@
 package wellbeing.waterIntake.collections;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.NotBlank;
+
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-public class WaterIntakeDto {
-
-    private String userId;
-    private double amount;
-    // Optionally, if you want the client to specify the date and time of the water intake
-    private LocalDateTime dateTime;
-
-    // Default constructor
-    public WaterIntakeDto() {}
-
-    // Constructor with fields
-    public WaterIntakeDto(String userId, double amount, LocalDateTime dateTime) {
-        this.userId = userId;
-        this.amount = amount;
-        this.dateTime = dateTime;
-    }
-
-    // Getters and setters
-    public String getUserId() {
-        return userId;
-    }
-
-    public void setUserId(String userId) {
-        this.userId = userId;
-    }
-
-    public double getAmount() {
-        return amount;
-    }
-
-    public void setAmount(double amount) {
-        this.amount = amount;
-    }
-
-    public LocalDateTime getDateTime() {
-        return dateTime;
-    }
-
-    public void setDateTime(LocalDateTime dateTime) {
-        this.dateTime = dateTime;
-    }
-
-    // toString method for debugging
-    @Override
-    public String toString() {
-        return "WaterIntakeDto{" +
-                "userId='" + userId + '\'' +
-                ", amount=" + amount +
-                ", dateTime=" + dateTime +
-                '}';
-    }
+/**
+ * @param amount   litres drunk, between 0.01 and 5
+ * @param dateTime optional UTC time of the intake; defaults to now
+ * @param date     optional local date of the user (the day the drink counts for); defaults to the UTC date
+ */
+public record WaterIntakeDto(
+        @NotBlank String userId,
+        @DecimalMin("0.01") @DecimalMax("5.0") double amount,
+        LocalDateTime dateTime,
+        LocalDate date) {
 }

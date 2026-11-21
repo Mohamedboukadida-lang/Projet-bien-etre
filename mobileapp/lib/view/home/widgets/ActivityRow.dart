@@ -7,7 +7,6 @@ class ActivityRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var media = MediaQuery.of(context).size;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
       padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 15),
@@ -47,13 +46,14 @@ class ActivityRow extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 4),
-                LinearProgressIndicator(
-                  value: wObj["progress"] as double? ?? 0.0,
-                  backgroundColor: Colors.grey.shade200,
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(AppColors.primaryColor1),
-                  minHeight: 8,
+                const SizedBox(height: 6),
+                Text(
+                  "${wObj["duration"]} · ${wObj["type"]}",
+                  style: const TextStyle(
+                    color: AppColors.primaryColor1,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),

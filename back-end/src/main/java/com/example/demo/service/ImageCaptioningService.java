@@ -1,43 +1,49 @@
 package com.example.demo.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.http.*;
+import java.io.IOException;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
+
+import com.example.demo.configuration.HuggingFaceProperties;
+import com.example.demo.exception.AiServiceException;
 
 @Service
 public class ImageCaptioningService {
 
-    private final RestTemplate restTemplate;
-    private final String apiUrl = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large";
-    private final String token = "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"; // Secure your token
+    private final RestClient restClient;
+    private final HuggingFaceProperties props;
 
-    @Autowired
-    public ImageCaptioningService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+    public ImageCaptioningService(@Qualifier("huggingFaceRestClient") RestClient restClient, HuggingFaceProperties props) {
+        this.restClient = restClient;
+        this.props = props;
     }
 
-    public ResponseEntity<String> generateCaption(MultipartFile file) {
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(token);
-            // The content type may need to be set to application/octet-stream or the specific image content type
-            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-
-            ByteArrayResource byteArrayResource = new ByteArrayResource(file.getBytes()) {
-                @Override
-                public String getFilename() {
-                    return file.getOriginalFilename(); // This is important for the API to process the file
-                }
-            };
-
-            HttpEntity<ByteArrayResource> entity = new HttpEntity<>(byteArrayResource, headers);
-
-            return restTemplate.postForEntity(apiUrl, entity, String.class);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
+    /** Returns the provider's JSON answer, e.g. {@code [{"generated_text":"a glass of water"}]}. */
+    public String generateCaption(MultipartFile file) {
+        if (file.isEmpty()) {
+            throw new AiServiceException(HttpStatus.BAD_REQUEST, "The uploaded image is empty.");
         }
+        HuggingFaceCalls.requireToken(props);
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (IOException e) {
+            throw new AiServiceException(HttpStatus.BAD_REQUEST, "Could not read the uploaded image.", e);
+        }
+        MediaType contentType = file.getContentType() != null
+                ? MediaType.parseMediaType(file.getContentType())
+                : MediaType.APPLICATION_OCTET_STREAM;
+
+        return HuggingFaceCalls.call(props.captionModel(), () -> restClient.post()
+                .uri("/hf-inference/models/{model}", props.captionModel())
+                .contentType(contentType)
+                .body(bytes)
+                .retrieve()
+                .body(String.class));
     }
 }

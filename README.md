@@ -1,64 +1,182 @@
 # Well-Being Application
 
-The Well-Being Application is a comprehensive platform designed to promote health and wellness. It includes features such as sleep tracking, hydration tracking, and a smart chatbot for personalized guidance. Utilizing a microservice architecture with modern technologies like Flutter, Flask, and Spring Boot, this application offers a secure and user-friendly interface for improving users' overall well-being.
+A mobile well-being companion: hydration, sleep and stress tracking, activity screens,
+and an AI **well-being coach** chatbot powered by an open LLM on Hugging Face.
 
-## Table of Contents
+| Component | Folder | Tech | Port |
+|---|---|---|---|
+| Mobile app | `mobileapp/` | Flutter (Android, iOS, web, desktop) | – |
+| AI service (chatbot, image captioning, Q&A) | `back-end/` | Spring Boot 4, Java 21, Hugging Face Inference Providers | 8081 |
+| Tracking service (users, hydration, sleep, stress) | `waterIntake/` | Spring Boot 4, Java 21, MongoDB | 8082 |
+| Database | – | MongoDB 8 | 27017 |
 
-- [About](#about)
-- [Features](#features)
-- [Technologies](#technologies)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
+```
+Flutter app ──► waterIntake (8082) ──► MongoDB
+     │
+     └──────► AI service (8081) ──► router.huggingface.co (chat model, e.g. Llama 3.1 8B Instruct)
+```
 
-## About
+The chatbot sends the conversation plus today's water intake and goal to the AI service,
+which adds a well-being coach system prompt and calls a chat model through the
+OpenAI-compatible Hugging Face router.
 
-The Well-Being Application aims to enhance users' overall well-being by providing a range of supportive features through an intuitive and user-friendly interface. From monitoring sleep patterns to hydration reminders, the application serves as a personal wellness companion.
+## Prerequisites
 
-## Features
+- **Docker** with Docker Compose (to run the back-end), or Java 21 + Maven + MongoDB.
+- **Flutter** 3.38.4 or newer (tested with Flutter 3.50 / Dart 3.14) and Android Studio
+  with an Android emulator.
+- A **Hugging Face token** with the *Make calls to Inference Providers* permission:
+  <https://huggingface.co/settings/tokens>. The default model
+  `meta-llama/Llama-3.1-8B-Instruct` is gated: accept its licence on its Hugging Face page
+  with the same account, or pick another chat model with `HF_CHAT_MODEL`. Inference
+  Providers calls use the account's credits: when they run out, Hugging Face answers
+  HTTP 402 and the chatbot says so; add credits or subscribe to PRO on huggingface.co.
 
-- **Sleep Tracker**: Monitor and analyze sleep patterns to optimize sleep quality.
-- **Hydration Tracker**: Track daily water intake and receive timely reminders to stay hydrated.
-- **Smart Chatbot**: Receive personalized guidance and suggestions for enhancing well-being based on user habits and goals.
-- **Intuitive User Interface**: Seamless navigation and interaction, designed for a superior user experience.
+## Quick start
 
-## Technologies
+1. Configure the back-end:
 
-- **Flutter**: Frontend framework for building cross-platform mobile applications.
-- **Flask**: Micro web framework for backend services.
-- **Spring Boot**: Java-based framework for building microservices.
-- **Nginx**: Used for reverse proxy and load balancing.
-- **JWT Authentication**: Ensures secure API access through JSON Web Tokens.
+   ```bash
+   cp .env.example .env
+   ```
 
-## Installation
+   Then edit `.env` and set `HF_TOKEN=hf_...`. Never commit `.env`.
 
-To set up the Well-Being Application locally, follow these steps:
+2. Start MongoDB and both services:
 
-1. Clone the repository
-2. Navigate to the project directory
-3.  Set up the frontend (Flutter) and backend (Flask, Spring Boot) services.
-4. Configure Nginx for reverse proxy and load balancing.
-5. Set up JWT authentication for API security.
-6. Build and deploy the application.
+   ```bash
+   docker compose up --build
+   ```
 
-## Usage
+   Check they are up: <http://localhost:8082/actuator/health> and
+   <http://localhost:8081/actuator/health>.
 
-To use the Well-Being Application:
+3. Run the app on the Android emulator:
 
-1. Launch the application on your device.
-2. Sign up or log in to your account.
-3. Explore features like sleep tracking, hydration tracking, and the smart chatbot.
-4. Use the intuitive interface to navigate between different sections and interact with the application.
+   ```bash
+   cd mobileapp
+   flutter pub get
+   flutter run
+   ```
 
-## Contributing
+   On the emulator the app reaches your computer at `10.0.2.2`, which is the default.
 
-Contributions are welcome! To contribute:
+### Other targets
 
-1. Fork the repository.
-2. Create a new branch for your feature or bug fix (`git checkout -b feature-branch`).
-3. Make your changes and test them thoroughly.
-4. Commit your changes with descriptive commit messages (`git commit -m 'Add new feature'`).
-5. Push your changes to your forked repository (`git push origin feature-branch`).
-6. Submit a pull request detailing your changes and improvements.
+- **Chrome:** `flutter run -d chrome` (uses `localhost`).
+- **Physical phone** on the same Wi-Fi as your computer:
 
+  ```bash
+  flutter run --dart-define=API_HOST=192.168.1.20
+  ```
 
+  Replace the IP with your computer's, and add it to
+  `mobileapp/android/app/src/main/res/xml/network_security_config.xml`, since Android
+  blocks plain HTTP to other hosts.
+- Full URLs can also be set with `--dart-define=HYDRATION_API_URL=...` and
+  `--dart-define=AI_API_URL=...` (see `mobileapp/lib/config/api_config.dart`).
+
+## Configuration
+
+AI service (`back-end/src/main/resources/application.properties`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `HF_TOKEN` | *(empty)* | Hugging Face token. Without it the chat answers HTTP 503 with an explanation. |
+| `HF_CHAT_MODEL` | `meta-llama/Llama-3.1-8B-Instruct` | Any chat model served by Inference Providers. |
+| `HF_CAPTION_MODEL` | `Salesforce/blip-image-captioning-large` | Model for `/api/image-caption`. |
+| `HF_QA_MODEL` | `deepset/roberta-base-squad2` | Model for `/api/ask`. |
+| `HF_MAX_TOKENS` | `512` | Maximum length of a chat answer. |
+| `CORS_ALLOWED_ORIGINS` | `*` | Browser origins allowed (Flutter web). |
+
+Tracking service (`waterIntake/src/main/resources/application.properties`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `MONGODB_URI` | `mongodb://rootuser:rootpass@localhost:27017/waterintake?authSource=admin` | MongoDB connection. |
+| `DEMO_USER_ID` | `66036b08fe2d6569e5efbb5c` | User created on startup and used by the app (there is no login back-end yet). |
+| `DEMO_USER_NAME` | `Demo User` | Name shown on the home screen, used only when the demo user is first created. |
+
+## API
+
+AI service:
+
+- `POST /api/chat`. Body: `{"messages":[{"role":"user","content":"..."}], "context":"optional facts"}`.
+  Returns `{"reply":"...","model":"..."}`. Roles are `user` or `assistant`, and the last
+  message must be from the user. Errors use RFC 9457 problem details (`{"detail": "..."}`).
+- `POST /api/image-caption` with multipart `file`.
+- `POST /api/ask` with body `{"question":"...","context":"..."}`.
+
+Tracking service, users and hydration (amounts in litres). Water days are the user's
+local days: the app sends its local date when logging a drink and when asking for a day
+or a week. `dateTime` values are UTC. Without a `date`, today's UTC date is used, and
+drinks logged before local dates existed count on their UTC date.
+
+- `GET /users/{userId}` and `GET /users/{userId}/daily-goal`
+- `POST /users/add`
+- `POST /waterIntake/logIntake` with body
+  `{"userId":"...","amount":0.25,"date":"2026-11-21","dateTime":"2026-11-21T17:30:00"}`
+  (`date` and `dateTime` optional)
+- `GET /waterIntake/daily/{userId}?date=YYYY-MM-DD`: litres drunk that day
+- `GET /waterIntake/records/{userId}?date=YYYY-MM-DD`: that day's drinks
+- `GET /waterIntake/weeklySummary/{userId}?date=YYYY-MM-DD`: Monday to Sunday of that
+  date's week, 0 for empty days
+- `GET /waterIntake/range/{userId}?startDate=...&endDate=...` (UTC date-times)
+- `POST /waterIntake/updateGoal/{userId}` with body `{"newGoal":2.5}`
+
+Tracking service, sleep and stress (the user's local dates and times; one entry per day,
+logging again for the same day replaces it; ranges are inclusive and at most 366 days):
+
+- `POST /sleep/log` with body
+  `{"userId":"...","bedTime":"2026-11-20T23:15:00","wakeTime":"2026-11-21T07:00:00"}`.
+  The night is stored under the wake-up date with its duration in minutes (10 min to 24 h).
+- `GET /sleep/{userId}?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `POST /stress/log` with body `{"userId":"...","date":"2026-11-21","level":3,"note":"optional"}`.
+  Levels go from 1 (very low) to 5 (very high).
+- `GET /stress/{userId}?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Errors from the tracking service are RFC 9457 problem details (`{"detail": "..."}`).
+
+## Running without Docker
+
+```bash
+cd waterIntake && ./mvnw spring-boot:run
+```
+
+```bash
+cd back-end && HF_TOKEN=hf_... ./mvnw spring-boot:run
+```
+
+The hydration service needs a MongoDB reachable at `MONGODB_URI`.
+
+## Tests
+
+```bash
+cd back-end && ./mvnw test
+```
+
+```bash
+cd waterIntake && ./mvnw test
+```
+
+```bash
+cd mobileapp && flutter test
+```
+
+The `waterIntake` integration test starts MongoDB with Testcontainers and is skipped
+when Docker is not available.
+
+## Demos
+
+Screenshots are in `New folder/` and screen recordings in `demos/`. They were captured
+from the Flutter web build at phone size (1080×2400 screenshots, 720×1600 videos) with
+sample data, as of a Saturday at 6:30 pm in Tunisia:
+
+- `home dashboard.jpg`, `stress tracker.jpg`, `log sleep and stress.jpg`: the home screen
+- `drinking water reminder.jpg`: the hydration tracker
+- `ai coach.jpg`: the chatbot
+- `welcome page.jpg`, `login.jpg`, `registration.jpg`, `creating profile.jpg`, `profile.jpg`
+- `dashboard demo.mp4`, `hydration tracker.mp4`, `sleep tracking UI demo (1).mp4`
+  (logging sleep and stress)
+- `chatbotdemo.mp4` predates the Hugging Face integration: it shows the earlier echo
+  prototype.

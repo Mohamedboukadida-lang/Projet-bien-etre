@@ -1,79 +1,85 @@
 import 'dart:convert';
 
+import 'package:fitnessapp/config/api_config.dart';
+import 'package:fitnessapp/service/api_client.dart';
 import 'package:http/http.dart' as http;
 
+/// Kept for existing callers; hydration errors are plain [ApiException]s.
+typedef HydrationException = ApiException;
+
+/// One logged drink. [time] is in the device's local time zone.
+class IntakeEntry {
+  const IntakeEntry({required this.amount, required this.time});
+
+  /// The service stores UTC date-times without an offset.
+  factory IntakeEntry.fromJson(Map<String, dynamic> json) => IntakeEntry(
+        amount: (json['amount'] as num).toDouble(),
+        time: DateTime.parse('${json['dateTime']}Z').toLocal(),
+      );
+
+  final double amount;
+  final DateTime time;
+}
+
+/// Client of the water-intake endpoints. Amounts are in litres.
 class HydrationService {
-  final String baseUrl = "http://localhost:8082";
+  HydrationService({http.Client? client, String? baseUrl})
+      : _api = ApiClient(
+            client: client,
+            baseUrl: baseUrl ?? ApiConfig.hydrationBaseUrl,
+            serviceName: 'hydration');
 
-  Future<double> fetchDailyGoal(String userId) async {
-    final response =
-        await http.get(Uri.parse('$baseUrl/users/$userId/daily-goal'));
+  final ApiClient _api;
 
-    if (response.statusCode == 200) {
-      return double.parse(response.body);
-    } else {
-      throw Exception('Failed to load daily goal');
-    }
-  }
+  String get baseUrl => _api.baseUrl;
+
+  Future<double> fetchDailyGoal(String userId) async =>
+      double.parse(await _api.get('/users/$userId/daily-goal'));
 
   Future<bool> updateDailyGoal(String userId, double newGoal) async {
-    final response = await http.post(
-      Uri.parse(
-          '$baseUrl/waterIntake/updateGoal/$userId'), // Adjusted to match the controller's RequestMapping
-      headers: <String, String>{
-        'Content-Type': 'application/json; charset=UTF-8',
-      },
-      body: jsonEncode({
-        'newGoal': newGoal
-      }), // Ensure the body is a JSON object with a key matching the server's expected key
-    );
-
-    if (response.statusCode == 200) {
-      // Handle successful request
-      print("Goal updated successfully.");
-      return true;
-    } else {
-      // Handle error response
-      print(
-          "Failed to update goal. Status code: ${response.statusCode}. Response body: ${response.body}");
-      return false;
-    }
+    await _api.post('/waterIntake/updateGoal/$userId', {'newGoal': newGoal});
+    return true;
   }
 
-  Future<double> fetchCurrentIntake(String userId) async {
-    DateTime now = DateTime.now();
-    String formattedDate =
-        "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}"; // Format date as YYYY-MM-DD
+  /// Litres drunk today (the device's local day).
+  Future<double> fetchCurrentIntake(String userId, {DateTime? now}) async =>
+      double.parse(await _api.get('/waterIntake/daily/$userId',
+          query: {'date': localDate(now ?? DateTime.now())}));
 
-    final response = await http.get(
-      Uri.parse('$baseUrl/waterIntake/daily/$userId?date=$formattedDate'),
-      headers: <String, String>{
-        'Content-Type': 'application/json',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      // Assuming the response body directly contains the intake amount as a double
-      final responseData = json.decode(response.body);
-      return double.parse(response.body);
-      // Adjust based on how your actual response is structured
-    } else {
-      throw Exception('Failed to load current intake');
-    }
+  /// Logs a drink now, counted for today (the device's local day). The time
+  /// (UTC) and the local date describe the same moment.
+  Future<bool> logWaterIntake(String userId, double amount, {DateTime? now}) async {
+    final at = now ?? DateTime.now();
+    await _api.post('/waterIntake/logIntake', {
+      'userId': userId,
+      'amount': amount,
+      'dateTime': at.toUtc().toIso8601String().replaceFirst('Z', ''),
+      'date': localDate(at),
+    });
+    return true;
   }
 
-  Future<bool> logWaterIntake(String userId, double amount) async {
-    final url = Uri.parse('$baseUrl/waterIntake/logIntake');
-    final response = await http.post(url,
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode({
-          'userId': userId,
-          'amount': amount,
-          // You might need to format the date to match your backend expectation
-        }));
+  /// Litres per local day for the current week, Monday first (7 values).
+  Future<List<double>> fetchWeeklySummary(String userId, {DateTime? now}) async {
+    final Map<String, dynamic> data = jsonDecode(await _api.get(
+        '/waterIntake/weeklySummary/$userId',
+        query: {'date': localDate(now ?? DateTime.now())}));
+    final days = data.keys.toList()..sort();
+    return [for (final day in days) (data[day] as num).toDouble()];
+  }
 
-    return response.statusCode == 200;
+  /// Drinks logged today (the device's local day), the same ones
+  /// [fetchCurrentIntake] sums.
+  Future<List<IntakeEntry>> fetchTodayEntries(String userId, {DateTime? now}) async {
+    final List<dynamic> data = jsonDecode(await _api.get(
+        '/waterIntake/records/$userId',
+        query: {'date': localDate(now ?? DateTime.now())}));
+    return [for (final e in data) IntakeEntry.fromJson(e as Map<String, dynamic>)];
+  }
+
+  /// `YYYY-MM-DD` of [d] in the device's time zone.
+  static String localDate(DateTime d) {
+    final l = d.toLocal();
+    return '${l.year}-${l.month.toString().padLeft(2, '0')}-${l.day.toString().padLeft(2, '0')}';
   }
 }

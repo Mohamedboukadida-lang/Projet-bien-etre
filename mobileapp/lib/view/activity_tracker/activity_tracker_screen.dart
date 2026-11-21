@@ -230,7 +230,7 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
                     BarChartData(
                       barTouchData: BarTouchData(
                         touchTooltipData: BarTouchTooltipData(
-                          tooltipBgColor: Colors.grey,
+                          getTooltipColor: (_) => Colors.grey,
                           tooltipHorizontalAlignment: FLHorizontalAlignment.right,
                           tooltipMargin: 10,
                           getTooltipItem: (group, groupIndex, rod, rodIndex) {
@@ -401,7 +401,7 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
         break;
     }
     return SideTitleWidget(
-      axisSide: meta.axisSide,
+      meta: meta,
       space: 16,
       child: text,
     );

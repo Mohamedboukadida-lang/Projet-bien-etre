@@ -1,199 +1,444 @@
-import 'package:dialog_flowtter/dialog_flowtter.dart';
+import 'package:fitnessapp/config/api_config.dart';
+import 'package:fitnessapp/service/HydrationService.dart';
+import 'package:fitnessapp/service/chat_service.dart';
 import 'package:fitnessapp/utils/app_colors.dart';
 import 'package:flutter/material.dart';
 
-// Chat screen that uses DialogFlowtter for message handling
+/// AI well-being coach backed by the AI service (Hugging Face chat model).
 class ChatScreen extends StatefulWidget {
   static String routeName = "/Chatbot";
 
-  const ChatScreen({Key? key}) : super(key: key);
+  const ChatScreen({super.key, this.chatService, this.hydrationService});
+
+  /// Injectable for tests; defaults to the real services.
+  final ChatService? chatService;
+  final HydrationService? hydrationService;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  late DialogFlowtter dialogFlowtter;
-  final TextEditingController _controller = TextEditingController();
-  final List<Map<String, dynamic>> messages = [];
-  final GlobalKey<AnimatedListState> _listKey = GlobalKey<AnimatedListState>();
+  static const List<String> _suggestions = [
+    "How much water should I drink today?",
+    "Tips to fall asleep faster",
+    "A 5-minute breathing exercise",
+    "Healthy snack ideas after a workout",
+  ];
+
+  late final ChatService _chatService = widget.chatService ?? ChatService();
+  late final HydrationService _hydrationService =
+      widget.hydrationService ?? HydrationService();
+
+  final TextEditingController _input = TextEditingController();
+  final ScrollController _scroll = ScrollController();
+  final List<ChatMessage> _messages = [];
+
+  bool _sending = false;
+  String? _error;
 
   @override
-  void initState() {
-    DialogFlowtter.fromFile().then((instance) => dialogFlowtter = instance);
-    super.initState();
+  void dispose() {
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Facts the coach can use to personalise answers. Failures are ignored:
+  /// the chat still works when the hydration service is down.
+  Future<String?> _userContext() async {
+    try {
+      final results = await Future.wait([
+        _hydrationService.fetchCurrentIntake(ApiConfig.userId),
+        _hydrationService.fetchDailyGoal(ApiConfig.userId),
+      ]);
+      return "Water drunk today: ${results[0].toStringAsFixed(2)} L; "
+          "daily hydration goal: ${results[1].toStringAsFixed(2)} L.";
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _send(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _sending) return;
+    _input.clear();
+    setState(() {
+      _messages.add(ChatMessage.user(trimmed));
+      _error = null;
+    });
+    await _requestReply();
+  }
+
+  Future<void> _requestReply() async {
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    _scrollToBottom();
+    try {
+      final context = await _userContext();
+      final reply =
+          await _chatService.send(List.of(_messages), context: context);
+      if (!mounted) return;
+      setState(() => _messages.add(ChatMessage.assistant(reply)));
+    } on ChatException catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+      _scrollToBottom();
+    }
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.animateTo(_scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut);
+      }
+    });
+  }
+
+  void _clear() {
+    setState(() {
+      _messages.clear();
+      _error = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.lightGrayColor,
       appBar: AppBar(
-        backgroundColor: AppColors.primaryColor1,
-        title: Text('ChatBot', style: TextStyle(color: AppColors.whiteColor)),
+        elevation: 0,
+        foregroundColor: AppColors.whiteColor,
+        flexibleSpace: Container(
+          decoration:
+              const BoxDecoration(gradient: LinearGradient(colors: [AppColors.primaryColor1, AppColors.primaryColor2])),
+        ),
+        title: const Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.white24,
+              child: Icon(Icons.spa_rounded, color: AppColors.whiteColor),
+            ),
+            SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Well-Being Coach",
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.whiteColor)),
+                Text("AI assistant · not medical advice",
+                    style:
+                        TextStyle(fontSize: 11, color: AppColors.whiteColor)),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          if (_messages.isNotEmpty)
+            IconButton(
+              tooltip: "New conversation",
+              onPressed: _sending ? null : _clear,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+        ],
       ),
-      body: Container(
-        padding: EdgeInsets.symmetric(horizontal: 8),
+      body: SafeArea(
         child: Column(
           children: [
             Expanded(
-              child: AnimatedList(
-                key: _listKey,
-                padding: EdgeInsets.only(top: 10, bottom: 10),
-                initialItemCount: messages.length,
-                itemBuilder: (context, index, animation) =>
-                    _buildMessage(index, animation),
-              ),
+              child: _messages.isEmpty
+                  ? _WelcomeView(suggestions: _suggestions, onTap: _send)
+                  : ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
+                      itemCount: _messages.length +
+                          (_sending ? 1 : 0) +
+                          (_error != null ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index < _messages.length) {
+                          return _MessageBubble(message: _messages[index]);
+                        }
+                        if (_sending) return const _TypingBubble();
+                        return _ErrorBubble(
+                            message: _error!, onRetry: _requestReply);
+                      },
+                    ),
             ),
-            // Input field and send button
-            _buildQuickReplies(), // Display quick replies above the input field
-            _buildInputField(),
+            _InputBar(
+              controller: _input,
+              enabled: !_sending,
+              onSend: () => _send(_input.text),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildMessage(int index, Animation<double> animation) {
-    final message = messages[index];
-    bool isUserMessage = message['isUserMessage'];
-    return SizeTransition(
-      sizeFactor: animation,
-      child: Align(
-        alignment: isUserMessage ? Alignment.centerRight : Alignment.centerLeft,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+class _WelcomeView extends StatelessWidget {
+  const _WelcomeView({required this.suggestions, required this.onTap});
+
+  final List<String> suggestions;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const SizedBox(height: 24),
+        Center(
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: AppColors.secondaryG),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.spa_rounded,
+                color: AppColors.whiteColor, size: 36),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          "Hi! I'm your well-being coach.",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: AppColors.blackColor),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          "Ask me about hydration, sleep, exercise, stress or healthy habits. "
+          "I can see today's water intake to personalise my tips.",
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: AppColors.grayColor),
+        ),
+        const SizedBox(height: 24),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
           children: [
-            if (!isUserMessage) ...[
-              Icon(Icons.android, color: Colors.green), // Chatbot icon
-              SizedBox(width: 8),
-            ],
-            Container(
-              margin: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              padding: EdgeInsets.symmetric(vertical: 10, horizontal: 14),
-              decoration: BoxDecoration(
-                color: isUserMessage
-                    ? AppColors.primaryColor1
-                    : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(20),
+            for (final s in suggestions)
+              ActionChip(
+                label: Text(s),
+                labelStyle: const TextStyle(
+                    color: AppColors.primaryColor1, fontSize: 13),
+                backgroundColor: AppColors.whiteColor,
+                side: const BorderSide(color: AppColors.primaryColor1),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                onPressed: () => onTap(s),
               ),
-              child: Text(
-                message['message'].text.text[0],
-                style: TextStyle(
-                  color: isUserMessage ? Colors.white : Colors.black87,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            if (isUserMessage) ...[
-              SizedBox(width: 8),
-              Icon(Icons.person, color: AppColors.primaryColor1), // User icon
-            ],
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MessageBubble extends StatelessWidget {
+  const _MessageBubble({required this.message});
+
+  final ChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.isUser;
+    // Models often emit Markdown bold markers; show plain text instead.
+    final text = message.content.replaceAll('**', '');
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.8),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+          decoration: BoxDecoration(
+            gradient: isUser ? LinearGradient(colors: AppColors.primaryG) : null,
+            color: isUser ? null : AppColors.whiteColor,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(18),
+              topRight: const Radius.circular(18),
+              bottomLeft: Radius.circular(isUser ? 18 : 4),
+              bottomRight: Radius.circular(isUser ? 4 : 18),
+            ),
+            boxShadow: const [
+              BoxShadow(
+                  color: Colors.black12, blurRadius: 4, offset: Offset(0, 2))
+            ],
+          ),
+          child: SelectableText(
+            text,
+            style: TextStyle(
+              color: isUser ? AppColors.whiteColor : AppColors.blackColor,
+              fontSize: 14,
+              height: 1.4,
+            ),
+          ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildInputField() {
-    return Padding(
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+class _TypingBubble extends StatefulWidget {
+  const _TypingBubble();
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 1200))
+    ..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
       child: Container(
+        key: const Key('typing-indicator'),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         decoration: BoxDecoration(
-          color: AppColors.lightGrayColor,
-          borderRadius: BorderRadius.circular(15),
+          color: AppColors.whiteColor,
+          borderRadius: BorderRadius.circular(18),
         ),
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                decoration: InputDecoration(
-                  hintText: "Type a message",
-                  border: InputBorder.none,
-                  hintStyle: TextStyle(color: AppColors.grayColor),
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(3, (i) {
+              final t = (_controller.value * 3 - i).clamp(0.0, 1.0);
+              final opacity = 0.3 + 0.7 * (1 - (2 * t - 1).abs());
+              return Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryColor1.withValues(alpha: opacity),
+                  shape: BoxShape.circle,
                 ),
-                style: TextStyle(color: AppColors.blackColor),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorBubble extends StatelessWidget {
+  const _ErrorBubble({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.redAccent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(fontSize: 13, color: AppColors.blackColor)),
+          ),
+          TextButton(onPressed: onRetry, child: const Text("Retry")),
+        ],
+      ),
+    );
+  }
+}
+
+class _InputBar extends StatelessWidget {
+  const _InputBar(
+      {required this.controller, required this.enabled, required this.onSend});
+
+  final TextEditingController controller;
+  final bool enabled;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: const BoxDecoration(
+        color: AppColors.whiteColor,
+        boxShadow: [
+          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -2))
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 4,
+              maxLength: 4000,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => onSend(),
+              decoration: InputDecoration(
+                hintText: "Ask your coach…",
+                counterText: "",
+                filled: true,
+                fillColor: AppColors.lightGrayColor,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  borderSide: BorderSide.none,
+                ),
               ),
             ),
-            IconButton(
-              onPressed: () {
-                sendMessage(_controller.text);
-                _controller.clear();
-              },
-              icon: Icon(Icons.send, color: AppColors.primaryColor1),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                  colors: enabled
+                      ? AppColors.primaryG
+                      : [AppColors.midGrayColor, AppColors.midGrayColor]),
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
+            child: IconButton(
+              tooltip: "Send",
+              onPressed: enabled ? onSend : null,
+              icon: const Icon(Icons.send_rounded, color: AppColors.whiteColor),
+            ),
+          ),
+        ],
       ),
     );
   }
-
-  void sendMessage(String text) async {
-    if (text.isEmpty) {
-      print('Message is empty');
-      return;
-    }
-
-    // Adding user message to the chat
-    final userMessage = {
-      'message': Message(text: DialogText(text: [text])),
-      'isUserMessage': true,
-    };
-
-    setState(() {
-      messages.add(userMessage);
-      _listKey.currentState?.insertItem(messages.length - 1);
-    });
-
-    // Simulating a chatbot response that echoes the user's message
-    final botMessage = {
-      'message': Message(text: DialogText(text: ["You said: $text"])),
-      'isUserMessage': false,
-    };
-
-    // Add a slight delay to simulate the chatbot "typing"
-    await Future.delayed(Duration(seconds: 1));
-
-    setState(() {
-      messages.add(botMessage);
-      _listKey.currentState?.insertItem(messages.length - 1);
-    });
-  }
-
-  // Define a list of quick replies (outside your build method)
-  final List<String> quickReplies = [
-    "What's the weather today?",
-    "Give me a productivity tip",
-    "How many glasses of water should I drink daily?",
-  ];
-
-// Build method to display quick replies
-  Widget _buildQuickReplies() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children:
-            quickReplies.map((reply) => _quickReplyButton(reply)).toList(),
-      ),
-    );
-  }
-
-  Widget _quickReplyButton(String reply) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4.0),
-      child: OutlinedButton(
-        onPressed: () => sendMessage(reply),
-        child: Text(reply, style: TextStyle(color: AppColors.primaryColor1)),
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: AppColors.primaryColor1),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        ),
-      ),
-    );
-  }
-
-  // AddMessage function is now integrated into sendMessage with animation
 }

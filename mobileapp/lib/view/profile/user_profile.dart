@@ -255,7 +255,7 @@ class _UserProfileState extends State<UserProfile> {
                             CustomAnimatedToggleSwitch<bool>(
                               current: positive,
                               values: [false, true],
-                              dif: 0.0,
+                              spacing: 0.0,
                               indicatorSize: Size.square(30.0),
                               animationDuration:
                                   const Duration(milliseconds: 200),
@@ -264,8 +264,8 @@ class _UserProfileState extends State<UserProfile> {
                               iconBuilder: (context, local, global) {
                                 return const SizedBox();
                               },
-                              defaultCursor: SystemMouseCursors.click,
-                              onTap: () => setState(() => positive = !positive),
+                              cursors: const ToggleCursors(defaultCursor: SystemMouseCursors.click),
+                              onTap: (_) => setState(() => positive = !positive),
                               iconsTappable: false,
                               wrapperBuilder: (context, global, child) {
                                 return Stack(
