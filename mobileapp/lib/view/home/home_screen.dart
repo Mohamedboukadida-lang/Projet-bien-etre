@@ -61,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
     },
   ];
 
-  UserProfile? _profile;
+  AppUser? _profile;
   double? _todayIntake;
   List<IntakeEntry>? _intakeEntries;
   List<SleepEntry>? _sleep;
@@ -100,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
     if (!mounted) return;
     setState(() {
-      _profile = results[0] as UserProfile?;
+      _profile = results[0] as AppUser?;
       _todayIntake = results[1] as double?;
       _intakeEntries = results[2] as List<IntakeEntry>?;
       _sleep = results[3] as List<SleepEntry>?;

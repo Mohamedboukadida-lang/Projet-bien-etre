@@ -1,4 +1,7 @@
 import 'package:animated_toggle_switch/animated_toggle_switch.dart';
+import 'package:fitnessapp/config/api_config.dart';
+import 'package:fitnessapp/service/api_client.dart';
+import 'package:fitnessapp/service/wellbeing_service.dart';
 import 'package:fitnessapp/utils/app_colors.dart';
 import 'package:fitnessapp/view/profile/widgets/setting_row.dart';
 import 'package:fitnessapp/view/profile/widgets/title_subtitle_cell.dart';
@@ -7,7 +10,10 @@ import 'package:flutter/material.dart';
 import '../../common_widgets/round_button.dart';
 
 class UserProfile extends StatefulWidget {
-  const UserProfile({Key? key}) : super(key: key);
+  const UserProfile({super.key, this.wellbeingService});
+
+  /// Injectable for tests; defaults to the real service.
+  final WellbeingService? wellbeingService;
 
   @override
   State<UserProfile> createState() => _UserProfileState();
@@ -15,6 +21,27 @@ class UserProfile extends StatefulWidget {
 
 class _UserProfileState extends State<UserProfile> {
   bool positive = false;
+
+  /// The user's name from the back-end; null while loading.
+  String? _name;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadName();
+  }
+
+  Future<void> _loadName() async {
+    String name;
+    try {
+      final user = await (widget.wellbeingService ?? WellbeingService())
+          .fetchUser(ApiConfig.userId);
+      name = user.name.isEmpty ? "Name not set" : user.name;
+    } on ApiException {
+      name = "Name unavailable";
+    }
+    if (mounted) setState(() => _name = name);
+  }
 
   List accountArr = [
     {
@@ -106,8 +133,9 @@ class _UserProfileState extends State<UserProfile> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Mohamed Boukadida",
-                          style: TextStyle(
+                          _name ?? "…",
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
                             color: AppColors.blackColor,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,

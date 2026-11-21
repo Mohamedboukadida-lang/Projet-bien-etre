@@ -4,10 +4,11 @@ import 'package:fitnessapp/config/api_config.dart';
 import 'package:fitnessapp/service/api_client.dart';
 import 'package:http/http.dart' as http;
 
-class UserProfile {
-  const UserProfile({required this.id, required this.name, required this.dailyGoal});
+/// A user account as stored by the tracking service.
+class AppUser {
+  const AppUser({required this.id, required this.name, required this.dailyGoal});
 
-  factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
+  factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
         id: json['id'] as String,
         name: (json['username'] as String?)?.trim() ?? '',
         dailyGoal: (json['dailyWaterIntakeGoal'] as num? ?? 0).toDouble(),
@@ -63,8 +64,8 @@ class WellbeingService {
 
   final ApiClient _api;
 
-  Future<UserProfile> fetchUser(String userId) async =>
-      UserProfile.fromJson(jsonDecode(await _api.get('/users/$userId')));
+  Future<AppUser> fetchUser(String userId) async =>
+      AppUser.fromJson(jsonDecode(await _api.get('/users/$userId')));
 
   Future<List<SleepEntry>> fetchSleep(String userId, DateTime from, DateTime to) async {
     final List<dynamic> data = jsonDecode(await _api.get('/sleep/$userId',
