@@ -18,13 +18,16 @@ class DemoUserInitializer implements ApplicationRunner {
 
     private final UserRepository userRepository;
     private final String demoUserId;
+    private final String name;
     private final double dailyGoal;
 
     DemoUserInitializer(UserRepository userRepository,
                         @Value("${app.demo-user.id:}") String demoUserId,
+                        @Value("${app.demo-user.name:Demo User}") String name,
                         @Value("${app.demo-user.daily-goal:2.5}") double dailyGoal) {
         this.userRepository = userRepository;
         this.demoUserId = demoUserId;
+        this.name = name;
         this.dailyGoal = dailyGoal;
     }
 
@@ -33,7 +36,7 @@ class DemoUserInitializer implements ApplicationRunner {
         if (demoUserId.isBlank() || userRepository.existsById(demoUserId)) {
             return;
         }
-        userRepository.save(new User(demoUserId, "demo", "demo@example.com", dailyGoal));
+        userRepository.save(new User(demoUserId, name, "demo@example.com", dailyGoal));
         log.info("Created demo user {} with a daily goal of {} L", demoUserId, dailyGoal);
     }
 }

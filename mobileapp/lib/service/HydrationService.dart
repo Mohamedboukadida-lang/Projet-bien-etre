@@ -1,83 +1,73 @@
 import 'dart:convert';
 
 import 'package:fitnessapp/config/api_config.dart';
+import 'package:fitnessapp/service/api_client.dart';
 import 'package:http/http.dart' as http;
 
-class HydrationException implements Exception {
-  const HydrationException(this.message);
+/// Kept for existing callers; hydration errors are plain [ApiException]s.
+typedef HydrationException = ApiException;
 
-  final String message;
+/// One logged drink. [time] is in the device's local time zone.
+class IntakeEntry {
+  const IntakeEntry({required this.amount, required this.time});
 
-  @override
-  String toString() => message;
+  /// The service stores UTC date-times without an offset.
+  factory IntakeEntry.fromJson(Map<String, dynamic> json) => IntakeEntry(
+        amount: (json['amount'] as num).toDouble(),
+        time: DateTime.parse('${json['dateTime']}Z').toLocal(),
+      );
+
+  final double amount;
+  final DateTime time;
 }
 
-/// Client of the water-intake service. Amounts are in litres.
+/// Client of the water-intake endpoints. Amounts are in litres.
 class HydrationService {
   HydrationService({http.Client? client, String? baseUrl})
-      : _client = client ?? http.Client(),
-        baseUrl = baseUrl ?? ApiConfig.hydrationBaseUrl;
+      : _api = ApiClient(
+            client: client,
+            baseUrl: baseUrl ?? ApiConfig.hydrationBaseUrl,
+            serviceName: 'hydration');
 
-  final http.Client _client;
-  final String baseUrl;
+  final ApiClient _api;
 
-  static const _jsonHeaders = {'Content-Type': 'application/json; charset=UTF-8'};
+  String get baseUrl => _api.baseUrl;
 
-  Future<double> fetchDailyGoal(String userId) async {
-    final response = await _get('/users/$userId/daily-goal');
-    return double.parse(response.body);
-  }
+  Future<double> fetchDailyGoal(String userId) async =>
+      double.parse(await _api.get('/users/$userId/daily-goal'));
 
   Future<bool> updateDailyGoal(String userId, double newGoal) async {
-    final response = await _send(() => _client.post(
-          Uri.parse('$baseUrl/waterIntake/updateGoal/$userId'),
-          headers: _jsonHeaders,
-          body: jsonEncode({'newGoal': newGoal}),
-        ));
-    return response.statusCode == 200;
+    await _api.post('/waterIntake/updateGoal/$userId', {'newGoal': newGoal});
+    return true;
   }
 
   /// Litres drunk today (UTC day, as computed by the service).
-  Future<double> fetchCurrentIntake(String userId) async {
-    final response = await _get('/waterIntake/daily/$userId');
-    return double.parse(response.body);
-  }
+  Future<double> fetchCurrentIntake(String userId) async =>
+      double.parse(await _api.get('/waterIntake/daily/$userId'));
 
   Future<bool> logWaterIntake(String userId, double amount) async {
-    final response = await _send(() => _client.post(
-          Uri.parse('$baseUrl/waterIntake/logIntake'),
-          headers: _jsonHeaders,
-          body: jsonEncode({'userId': userId, 'amount': amount}),
-        ));
-    return response.statusCode == 200;
+    await _api.post('/waterIntake/logIntake', {'userId': userId, 'amount': amount});
+    return true;
   }
 
   /// Litres per day for the current week, Monday first (7 values).
   Future<List<double>> fetchWeeklySummary(String userId) async {
-    final response = await _get('/waterIntake/weeklySummary/$userId');
-    final Map<String, dynamic> data = jsonDecode(response.body);
+    final Map<String, dynamic> data =
+        jsonDecode(await _api.get('/waterIntake/weeklySummary/$userId'));
     final days = data.keys.toList()..sort();
     return [for (final day in days) (data[day] as num).toDouble()];
   }
 
-  Future<http.Response> _get(String path) async {
-    final response =
-        await _send(() => _client.get(Uri.parse('$baseUrl$path')));
-    if (response.statusCode != 200) {
-      throw HydrationException(
-          'Hydration service answered HTTP ${response.statusCode} for $path');
-    }
-    return response;
-  }
-
-  Future<http.Response> _send(Future<http.Response> Function() request) async {
-    try {
-      return await request().timeout(ApiConfig.timeout);
-    } on HydrationException {
-      rethrow;
-    } catch (_) {
-      throw HydrationException(
-          'Cannot reach the hydration service at $baseUrl. Is the back-end running?');
-    }
+  /// Drinks logged during today's UTC day, the same day [fetchCurrentIntake]
+  /// sums, so the two always agree.
+  Future<List<IntakeEntry>> fetchTodayEntries(String userId, {DateTime? now}) async {
+    final utc = (now ?? DateTime.now()).toUtc();
+    final start = DateTime.utc(utc.year, utc.month, utc.day);
+    final end = start.add(const Duration(days: 1));
+    String iso(DateTime d) => d.toIso8601String().replaceFirst('Z', '');
+    final List<dynamic> data = jsonDecode(await _api.get(
+        '/waterIntake/range/$userId',
+        query: {'startDate': iso(start), 'endDate': iso(end)}));
+    return [for (final e in data) IntakeEntry.fromJson(e as Map<String, dynamic>)];
   }
 }

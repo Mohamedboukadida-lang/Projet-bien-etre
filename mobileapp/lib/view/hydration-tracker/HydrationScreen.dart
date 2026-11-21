@@ -58,8 +58,7 @@ class _HydrationScreenState extends State<HydrationScreen> {
   Future<void> _log(double litres) async {
     setState(() => _logging = true);
     try {
-      final ok = await _service.logWaterIntake(_userId, litres);
-      if (!ok) throw const HydrationException("Could not log the water intake.");
+      await _service.logWaterIntake(_userId, litres);
       await _refresh();
       _toast("+${(litres * 1000).round()} ml logged");
     } on HydrationException catch (e) {
@@ -139,8 +138,7 @@ class _HydrationScreenState extends State<HydrationScreen> {
     );
     if (goal == null) return;
     try {
-      final ok = await _service.updateDailyGoal(_userId, goal);
-      if (!ok) throw const HydrationException("Could not update the goal.");
+      await _service.updateDailyGoal(_userId, goal);
       await _refresh();
       _toast("Daily goal set to ${goal.toStringAsFixed(1)} L");
     } on HydrationException catch (e) {

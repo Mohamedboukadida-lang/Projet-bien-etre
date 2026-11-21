@@ -1,13 +1,13 @@
 # Well-Being Application
 
-A mobile well-being companion: hydration tracking, activity and sleep screens, and an
-AI **well-being coach** chatbot powered by an open LLM on Hugging Face.
+A mobile well-being companion: hydration, sleep and stress tracking, activity screens,
+and an AI **well-being coach** chatbot powered by an open LLM on Hugging Face.
 
 | Component | Folder | Tech | Port |
 |---|---|---|---|
 | Mobile app | `mobileapp/` | Flutter (Android, iOS, web, desktop) | – |
 | AI service (chatbot, image captioning, Q&A) | `back-end/` | Spring Boot 4, Java 21, Hugging Face Inference Providers | 8081 |
-| Hydration service | `waterIntake/` | Spring Boot 4, Java 21, MongoDB | 8082 |
+| Tracking service (users, hydration, sleep, stress) | `waterIntake/` | Spring Boot 4, Java 21, MongoDB | 8082 |
 | Database | – | MongoDB 8 | 27017 |
 
 ```
@@ -87,12 +87,13 @@ AI service (`back-end/src/main/resources/application.properties`):
 | `HF_MAX_TOKENS` | `512` | Maximum length of a chat answer. |
 | `CORS_ALLOWED_ORIGINS` | `*` | Browser origins allowed (Flutter web). |
 
-Hydration service (`waterIntake/src/main/resources/application.properties`):
+Tracking service (`waterIntake/src/main/resources/application.properties`):
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `MONGODB_URI` | `mongodb://rootuser:rootpass@localhost:27017/waterintake?authSource=admin` | MongoDB connection. |
 | `DEMO_USER_ID` | `66036b08fe2d6569e5efbb5c` | User created on startup and used by the app (there is no login back-end yet). |
+| `DEMO_USER_NAME` | `Demo User` | Name shown on the home screen, used only when the demo user is first created. |
 
 ## API
 
@@ -104,7 +105,7 @@ AI service:
 - `POST /api/image-caption` with multipart `file`.
 - `POST /api/ask` with body `{"question":"...","context":"..."}`.
 
-Hydration service (amounts in litres, days in UTC):
+Tracking service, users and hydration (amounts in litres, days in UTC):
 
 - `GET /users/{userId}` and `GET /users/{userId}/daily-goal`
 - `POST /users/add`
@@ -113,6 +114,19 @@ Hydration service (amounts in litres, days in UTC):
 - `GET /waterIntake/weeklySummary/{userId}` (Monday to Sunday, 0 for empty days)
 - `GET /waterIntake/range/{userId}?startDate=...&endDate=...` (ISO date-times)
 - `POST /waterIntake/updateGoal/{userId}` with body `{"newGoal":2.5}`
+
+Tracking service, sleep and stress (the user's local dates and times; one entry per day,
+logging again for the same day replaces it; ranges are inclusive and at most 366 days):
+
+- `POST /sleep/log` with body
+  `{"userId":"...","bedTime":"2026-11-20T23:15:00","wakeTime":"2026-11-21T07:00:00"}`.
+  The night is stored under the wake-up date with its duration in minutes (10 min to 24 h).
+- `GET /sleep/{userId}?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `POST /stress/log` with body `{"userId":"...","date":"2026-11-21","level":3,"note":"optional"}`.
+  Levels go from 1 (very low) to 5 (very high).
+- `GET /stress/{userId}?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Errors from the tracking service are RFC 9457 problem details (`{"detail": "..."}`).
 
 ## Running without Docker
 

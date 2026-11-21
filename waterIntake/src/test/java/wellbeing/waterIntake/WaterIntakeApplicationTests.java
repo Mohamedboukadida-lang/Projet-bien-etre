@@ -2,6 +2,9 @@ package wellbeing.waterIntake;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +21,7 @@ import wellbeing.waterIntake.repository.UserRepository;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** End-to-end test against a real MongoDB; skipped when Docker is not available. */
@@ -53,6 +57,35 @@ class WaterIntakeApplicationTests {
 		mvc.perform(get("/waterIntake/daily/demo-user"))
 				.andExpect(status().isOk())
 				.andExpect(content().string("0.75"));
+	}
+
+	@Test
+	void sleepAndStressAreStoredOncePerDayAndQueriedByRange() throws Exception {
+		LocalDate today = LocalDate.now(ZoneOffset.UTC);
+		String bed = today.minusDays(1) + "T23:00:00";
+		for (String wake : new String[] {today + "T06:30:00", today + "T07:00:00"}) {
+			mvc.perform(post("/sleep/log").contentType(MediaType.APPLICATION_JSON)
+							.content("{\"userId\":\"demo-user\",\"bedTime\":\"" + bed + "\",\"wakeTime\":\"" + wake + "\"}"))
+					.andExpect(status().isOk());
+		}
+		mvc.perform(post("/stress/log").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"userId\":\"demo-user\",\"date\":\"" + today.minusDays(2) + "\",\"level\":2}"))
+				.andExpect(status().isOk());
+		mvc.perform(post("/stress/log").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"userId\":\"demo-user\",\"date\":\"" + today.minusDays(10) + "\",\"level\":5}"))
+				.andExpect(status().isOk());
+
+		String from = today.minusDays(6).toString();
+		String to = today.toString();
+		mvc.perform(get("/sleep/demo-user").param("from", from).param("to", to))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].date").value(to))
+				.andExpect(jsonPath("$[0].durationMinutes").value(480));
+		mvc.perform(get("/stress/demo-user").param("from", from).param("to", to))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].level").value(2));
 	}
 
 }
