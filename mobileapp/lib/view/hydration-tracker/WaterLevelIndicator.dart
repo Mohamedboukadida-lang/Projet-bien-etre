@@ -1,111 +1,102 @@
+import 'dart:math' as math;
+
+import 'package:fitnessapp/utils/app_colors.dart';
 import 'package:flutter/material.dart';
 
-class HydrationLevelIndicator extends StatefulWidget {
+/// Animated "glass" filled up to `currentLevel / goal`.
+class HydrationLevelIndicator extends StatelessWidget {
+  const HydrationLevelIndicator({
+    super.key,
+    required this.currentLevel,
+    required this.goal,
+  });
+
   final double currentLevel;
   final double goal;
 
-  const HydrationLevelIndicator({
-    Key? key,
-    required this.currentLevel,
-    required this.goal,
-  }) : super(key: key);
-
-  @override
-  State<HydrationLevelIndicator> createState() =>
-      _HydrationLevelIndicatorState();
-}
-
-class _HydrationLevelIndicatorState extends State<HydrationLevelIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    );
-    _animation = Tween<double>(
-            begin: 0.0, end: widget.currentLevel / widget.goal)
-        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut))
-      ..addListener(() {
-        setState(() {});
-      });
-
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.bottomCenter,
-      children: [
-        CustomPaint(
-          size: Size(double.infinity, 100),
-          painter: _WaterLevelPainter(_animation.value),
-        ),
-        Positioned(
-          bottom: 10,
-          child: Text(
-            "${(widget.currentLevel / widget.goal * 100).toStringAsFixed(0)}% of Daily Goal (${widget.currentLevel.toStringAsFixed(1)}L / ${widget.goal}L)",
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+    final progress = goal <= 0 ? 0.0 : (currentLevel / goal).clamp(0.0, 1.0);
+    final percent = goal <= 0 ? 0 : (currentLevel / goal * 100).round();
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: progress),
+      duration: const Duration(milliseconds: 900),
+      curve: Curves.easeInOut,
+      builder: (context, value, _) => ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 140,
+          color: AppColors.primaryColor2.withValues(alpha: 0.15),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(painter: _WaterPainter(value)),
+              ),
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "$percent%",
+                      style: const TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.blackColor),
+                    ),
+                    Text(
+                      "${currentLevel.toStringAsFixed(2)} L of ${goal.toStringAsFixed(2)} L",
+                      style: const TextStyle(
+                          fontSize: 13, color: AppColors.blackColor),
+                    ),
+                    if (percent >= 100)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4),
+                        child: Text("Goal reached, well done!",
+                            style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.blackColor)),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 }
 
-class _WaterLevelPainter extends CustomPainter {
-  final double percentage;
+class _WaterPainter extends CustomPainter {
+  _WaterPainter(this.progress);
 
-  _WaterLevelPainter(this.percentage);
+  final double progress;
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final top = size.height * (1 - progress);
+    final path = Path()..moveTo(0, top);
+    const waves = 2;
+    for (double x = 0; x <= size.width; x += 4) {
+      final y = top + 5 * math.sin(x / size.width * waves * 2 * math.pi);
+      path.lineTo(x, y);
+    }
+    path
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
     final paint = Paint()
-      ..shader = LinearGradient(
-        colors: [Colors.lightBlueAccent, Colors.blue],
+      ..shader = const LinearGradient(
+        colors: [AppColors.primaryColor2, AppColors.primaryColor1],
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTRB(0, 0, size.width, size.height));
-
-    final path = Path();
-
-    // Background
-    path.lineTo(0, size.height);
-    path.lineTo(size.width, size.height);
-    path.lineTo(size.width, 0);
-    path.close();
-
+      ).createShader(Offset.zero & size);
     canvas.drawPath(path, paint);
-
-    // Water Level
-    double waterHeight = size.height * (1 - percentage);
-    path.moveTo(0, waterHeight);
-    path.quadraticBezierTo(
-        size.width * 0.25, waterHeight - 10, size.width * 0.5, waterHeight);
-    path.quadraticBezierTo(
-        size.width * 0.75, waterHeight + 10, size.width, waterHeight);
-    path.lineTo(size.width, size.height);
-    path.lineTo(0, size.height);
-    path.close();
-
-    canvas.drawPath(path, paint..color = paint.color.withOpacity(0.5));
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _WaterPainter oldDelegate) =>
+      oldDelegate.progress != progress;
 }

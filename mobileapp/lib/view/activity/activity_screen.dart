@@ -150,8 +150,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         }).toList();
                       },
                       touchTooltipData: LineTouchTooltipData(
-                        tooltipBgColor: AppColors.secondaryColor1,
-                        tooltipRoundedRadius: 20,
+                        getTooltipColor: (_) => AppColors.secondaryColor1,
+                        tooltipBorderRadius: BorderRadius.circular(20),
                         getTooltipItems: (List<LineBarSpot> lineBarsSpot) {
                           return lineBarsSpot.map((lineBarSpot) {
                             return LineTooltipItem(
@@ -340,7 +340,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
   LineTouchData get lineTouchData1 => LineTouchData(
         handleBuiltInTouches: true,
         touchTooltipData: LineTouchTooltipData(
-          tooltipBgColor: Colors.blueGrey.withOpacity(0.8),
+          getTooltipColor: (_) => Colors.blueGrey.withOpacity(0.8),
         ),
       );
 
@@ -468,7 +468,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
 
     return SideTitleWidget(
-      axisSide: meta.axisSide,
+      meta: meta,
       space: 10,
       child: text,
     );

@@ -525,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: media.width * 0.9,
                           width: media.width * 0.07,
                           backgroundColor: Colors.grey.shade100,
-                          foregrondColor: Colors.purple,
+                          foregroundColor: Colors.purple,
                           ratio: 0.5,
                           direction: Axis.vertical,
                           curve: Curves.fastLinearToSlowEaseIn,
@@ -911,8 +911,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             }).toList();
                           },
                           touchTooltipData: LineTouchTooltipData(
-                            tooltipBgColor: AppColors.secondaryColor1,
-                            tooltipRoundedRadius: 20,
+                            getTooltipColor: (_) => AppColors.secondaryColor1,
+                            tooltipBorderRadius: BorderRadius.circular(20),
                             getTooltipItems: (List<LineBarSpot> lineBarsSpot) {
                               return lineBarsSpot.map((lineBarSpot) {
                                 return LineTooltipItem(
@@ -1140,7 +1140,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return SideTitleWidget(
-      axisSide: meta.axisSide,
+      meta: meta,
       space: 10,
       child: text,
     );

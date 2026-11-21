@@ -1,31 +1,34 @@
 package com.example.demo.service;
 
-import org.springframework.http.*;
+import java.util.Map;
+
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
-import java.util.Collections;
+import org.springframework.web.client.RestClient;
+
+import com.example.demo.configuration.HuggingFaceProperties;
 
 @Service
 public class QuestionAnsweringService {
 
-    private final RestTemplate restTemplate;
-    private final String apiUrl = "https://api-inference.huggingface.co/models/deepset/roberta-base-squad2";
-    private final String token = "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"; // Be sure to secure your API tokens!
+    private final RestClient restClient;
+    private final HuggingFaceProperties props;
 
-    public QuestionAnsweringService(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+    public QuestionAnsweringService(@Qualifier("huggingFaceRestClient") RestClient restClient, HuggingFaceProperties props) {
+        this.restClient = restClient;
+        this.props = props;
     }
 
-    public ResponseEntity<String> query(String question, String context) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
-
-        String requestBody = "{\"inputs\": {\"question\": \"" + question + "\", \"context\": \"" + context + "\"}}";
-
-        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
-
-        return restTemplate.exchange(apiUrl, HttpMethod.POST, entity, String.class);
+    /** Returns the provider's JSON answer, e.g. {@code {"answer":"...","score":0.9,...}}. */
+    public String query(String question, String context) {
+        HuggingFaceCalls.requireToken(props);
+        Map<String, Object> body = Map.of("inputs", Map.of("question", question, "context", context));
+        return HuggingFaceCalls.call(props.qaModel(), () -> restClient.post()
+                .uri("/hf-inference/models/{model}", props.qaModel())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .body(String.class));
     }
 }

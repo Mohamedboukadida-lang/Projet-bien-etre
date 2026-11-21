@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:fitnessapp/utils/app_colors.dart';
 import 'package:fitnessapp/view/activity/activity_screen.dart';
 import 'package:fitnessapp/view/camera/camera_screen.dart';
@@ -63,11 +61,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: _widgetOptions,
       ),
       bottomNavigationBar: BottomAppBar(
-        height: Platform.isIOS ? 70 : 65,
+        height: Theme.of(context).platform == TargetPlatform.iOS ? 70 : 65,
         color: Colors.transparent,
         padding: const EdgeInsets.all(0),
         child: Container(
-          height: Platform.isIOS ? 70 : 65,
+          height: Theme.of(context).platform == TargetPlatform.iOS ? 70 : 65,
           decoration: const BoxDecoration(
               color: AppColors.whiteColor,
               boxShadow: [

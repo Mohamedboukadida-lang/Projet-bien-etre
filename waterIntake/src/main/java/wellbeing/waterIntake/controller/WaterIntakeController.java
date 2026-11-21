@@ -1,65 +1,55 @@
 package wellbeing.waterIntake.controller;
 
-
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import wellbeing.waterIntake.collections.GoalUpdateDto;
 import wellbeing.waterIntake.collections.WaterIntakeDto;
 import wellbeing.waterIntake.collections.WaterIntakeRecord;
 import wellbeing.waterIntake.repository.UserRepository;
 import wellbeing.waterIntake.repository.WaterIntakeRecordRepository;
-import org.springframework.web.bind.annotation.*;
 
 import java.time.*;
 import java.time.temporal.TemporalAdjusters;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import java.util.LinkedHashMap;
 
-
-
-@CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS})
-
+/** All dates and times are UTC. */
 @RestController
 @RequestMapping("/waterIntake")
 public class WaterIntakeController {
 
-    @Autowired
-    private WaterIntakeRecordRepository waterIntakeRecordRepository;
+    private final WaterIntakeRecordRepository waterIntakeRecordRepository;
+    private final UserRepository userRepository;
+    private final Clock clock;
 
-    @Autowired
-    private UserRepository userRepository;
+    public WaterIntakeController(WaterIntakeRecordRepository waterIntakeRecordRepository,
+                                 UserRepository userRepository,
+                                 Clock clock) {
+        this.waterIntakeRecordRepository = waterIntakeRecordRepository;
+        this.userRepository = userRepository;
+        this.clock = clock;
+    }
 
-
+    /** Total litres drunk on {@code date} (today when omitted). */
     @GetMapping("/daily/{userId}")
     public double getDailyIntake(
             @PathVariable String userId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-
-        // Convert the date to the start and end of the day in UTC (or any other time zone as required)
-        ZoneId zoneId = ZoneId.of("UTC"); // Choose the appropriate time zone. For example, ZoneId.systemDefault() or ZoneId.of("America/New_York")
-        ZonedDateTime startOfDay = date.atStartOfDay(zoneId);
-        ZonedDateTime endOfDay = startOfDay.plusDays(1).minusNanos(1);
-
-        // Now convert startOfDay and endOfDay to LocalDateTime for querying, since ZonedDateTime might not be directly supported depending on your JPA provider
-        LocalDateTime startDateTime = startOfDay.toLocalDateTime();
-        LocalDateTime endDateTime = endOfDay.toLocalDateTime();
-
-        // Update findByUserIdAndDate to findByUserIdAndDateTimeBetween or similar method that matches your naming
-        List<WaterIntakeRecord> records = waterIntakeRecordRepository.findByUserIdAndDateTimeBetween(userId, startDateTime, endDateTime);
-
-        return records.stream().mapToDouble(WaterIntakeRecord::getAmount).sum();
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        LocalDate day = date != null ? date : LocalDate.now(clock);
+        return recordsBetween(userId, day.atStartOfDay(), day.plusDays(1).atStartOfDay())
+                .stream().mapToDouble(WaterIntakeRecord::getAmount).sum();
     }
 
-
     @PostMapping("/updateGoal/{userId}")
-    public ResponseEntity<?> updateDailyWaterIntakeGoal(@PathVariable String userId, @RequestBody Map<String, Double> body) {
-        Double newGoal = body.get("newGoal"); // Extracting newGoal from the request body
+    public ResponseEntity<Void> updateDailyWaterIntakeGoal(@PathVariable String userId,
+                                                           @Valid @RequestBody GoalUpdateDto body) {
         return userRepository.findById(userId).map(user -> {
-            user.setDailyWaterIntakeGoal(newGoal);
+            user.setDailyWaterIntakeGoal(body.newGoal());
             userRepository.save(user);
-            return ResponseEntity.ok().build();
+            return ResponseEntity.ok().<Void>build();
         }).orElse(ResponseEntity.notFound().build());
     }
 
@@ -68,44 +58,36 @@ public class WaterIntakeController {
             @PathVariable String userId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate) {
-
-        return waterIntakeRecordRepository.findByUserIdAndDateRange(userId, startDate, endDate);
+        return recordsBetween(userId, startDate, endDate);
     }
+
     @PostMapping("/logIntake")
-    public ResponseEntity<WaterIntakeRecord> logWaterIntake(@RequestBody WaterIntakeDto intakeDto) {
+    public ResponseEntity<WaterIntakeRecord> logWaterIntake(@Valid @RequestBody WaterIntakeDto intakeDto) {
+        if (!userRepository.existsById(intakeDto.userId())) {
+            return ResponseEntity.notFound().build();
+        }
         WaterIntakeRecord record = new WaterIntakeRecord();
-        record.setUserId(intakeDto.getUserId());
-        record.setAmount(intakeDto.getAmount());
-        // Set dateTime to now in UTC
-        record.setDateTime(LocalDateTime.now(ZoneOffset.UTC));
-        WaterIntakeRecord savedRecord = waterIntakeRecordRepository.save(record);
-        return ResponseEntity.ok(savedRecord);
+        record.setUserId(intakeDto.userId());
+        record.setAmount(intakeDto.amount());
+        record.setDateTime(intakeDto.dateTime() != null ? intakeDto.dateTime() : LocalDateTime.now(clock));
+        return ResponseEntity.ok(waterIntakeRecordRepository.save(record));
     }
+
+    /** Litres per day for the current week, Monday to Sunday, with 0 for days without records. */
     @GetMapping("/weeklySummary/{userId}")
-    public ResponseEntity<Map<LocalDate, Double>> getWeeklyIntakeSummary(@PathVariable String userId) {
-        // Define the start and end of the current week in UTC
-        LocalDate today = LocalDate.now(ZoneOffset.UTC);
-        LocalDate startOfWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        LocalDate endOfWeek = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
-
-        // Convert to LocalDateTime for start and end of week
-        LocalDateTime startDateTime = startOfWeek.atStartOfDay(ZoneOffset.UTC).toLocalDateTime();
-        LocalDateTime endDateTime = endOfWeek.atTime(LocalTime.MAX).withNano(0).atZone(ZoneOffset.UTC).toLocalDateTime();
-
-        // Fetch records from the database
-        List<WaterIntakeRecord> records = waterIntakeRecordRepository.findByUserIdAndDateTimeBetween(userId, startDateTime, endDateTime);
-
-        // Aggregate records by date and sum the water intake amounts
-        Map<LocalDate, Double> dailySummaries = records.stream()
-                .collect(Collectors.groupingBy(
-                        record -> record.getDateTime().toLocalDate(),
-                        LinkedHashMap::new, // Maintain the order of days
-                        Collectors.summingDouble(WaterIntakeRecord::getAmount)
-                ));
-
-        return ResponseEntity.ok(dailySummaries);
+    public Map<LocalDate, Double> getWeeklyIntakeSummary(@PathVariable String userId) {
+        LocalDate startOfWeek = LocalDate.now(clock).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        Map<LocalDate, Double> summary = new LinkedHashMap<>();
+        for (int i = 0; i < 7; i++) {
+            summary.put(startOfWeek.plusDays(i), 0.0);
+        }
+        recordsBetween(userId, startOfWeek.atStartOfDay(), startOfWeek.plusDays(7).atStartOfDay())
+                .forEach(r -> summary.merge(r.getDateTime().toLocalDate(), r.getAmount(), Double::sum));
+        return summary;
     }
 
-
-    // Additional methods for updating goals, fetching summaries, etc.
+    private List<WaterIntakeRecord> recordsBetween(String userId, LocalDateTime start, LocalDateTime end) {
+        return waterIntakeRecordRepository
+                .findInRange(userId, start, end);
+    }
 }

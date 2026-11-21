@@ -2,12 +2,15 @@ package wellbeing.waterIntake.collections;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+
 @Setter
 @Getter
 @AllArgsConstructor
+@NoArgsConstructor
 @Document
 public class User {
     @Id
@@ -15,6 +18,4 @@ public class User {
     private String username;
     private String email;
     private double dailyWaterIntakeGoal; // in liters
-
-    // Constructors, Getters, and Setters
 }
