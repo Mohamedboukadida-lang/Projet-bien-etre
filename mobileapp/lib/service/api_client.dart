@@ -41,6 +41,14 @@ class ApiClient {
     return _check(response, path);
   }
 
+  /// PATCHes [body] as JSON to [path] and returns the response body; throws
+  /// [ApiException] unless HTTP 200.
+  Future<String> patch(String path, Object body) async {
+    final response = await _send(() => _client.patch(Uri.parse('$baseUrl$path'),
+        headers: _jsonHeaders, body: jsonEncode(body)));
+    return _check(response, path);
+  }
+
   String _check(http.Response response, String path) {
     final body = utf8.decode(response.bodyBytes);
     if (response.statusCode == 200) return body;

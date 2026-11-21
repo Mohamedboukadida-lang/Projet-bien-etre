@@ -6,12 +6,24 @@ import 'package:http/http.dart' as http;
 
 /// A user account as stored by the tracking service.
 class AppUser {
-  const AppUser({required this.id, required this.name, required this.dailyGoal});
+  const AppUser({
+    required this.id,
+    required this.name,
+    required this.dailyGoal,
+    this.heightCm,
+    this.weightKg,
+    this.dateOfBirth,
+  });
 
   factory AppUser.fromJson(Map<String, dynamic> json) => AppUser(
         id: json['id'] as String,
         name: (json['username'] as String?)?.trim() ?? '',
         dailyGoal: (json['dailyWaterIntakeGoal'] as num? ?? 0).toDouble(),
+        heightCm: (json['heightCm'] as num?)?.toDouble(),
+        weightKg: (json['weightKg'] as num?)?.toDouble(),
+        dateOfBirth: json['dateOfBirth'] == null
+            ? null
+            : DateTime.parse(json['dateOfBirth'] as String),
       );
 
   final String id;
@@ -19,6 +31,20 @@ class AppUser {
 
   /// Litres.
   final double dailyGoal;
+
+  /// Null until the user enters them.
+  final double? heightCm;
+  final double? weightKg;
+  final DateTime? dateOfBirth;
+
+  /// Age in whole years on [today], or null without a date of birth.
+  int? ageOn(DateTime today) {
+    final dob = dateOfBirth;
+    if (dob == null) return null;
+    final hadBirthday = today.month > dob.month ||
+        (today.month == dob.month && today.day >= dob.day);
+    return today.year - dob.year - (hadBirthday ? 0 : 1);
+  }
 }
 
 /// One night of sleep; [date] is the local wake-up day.
@@ -66,6 +92,15 @@ class WellbeingService {
 
   Future<AppUser> fetchUser(String userId) async =>
       AppUser.fromJson(jsonDecode(await _api.get('/users/$userId')));
+
+  /// Updates the user's body data; null arguments are left unchanged.
+  Future<AppUser> updateBody(String userId,
+          {double? heightCm, double? weightKg, DateTime? dateOfBirth}) async =>
+      AppUser.fromJson(jsonDecode(await _api.patch('/users/$userId', {
+        if (heightCm != null) 'heightCm': heightCm,
+        if (weightKg != null) 'weightKg': weightKg,
+        if (dateOfBirth != null) 'dateOfBirth': _date(dateOfBirth),
+      })));
 
   Future<List<SleepEntry>> fetchSleep(String userId, DateTime from, DateTime to) async {
     final List<dynamic> data = jsonDecode(await _api.get('/sleep/$userId',

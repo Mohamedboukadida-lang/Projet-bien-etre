@@ -86,6 +86,21 @@ class WaterIntakeApplicationTests {
 	}
 
 	@Test
+	void bodyDataIsSavedAndReturnedWithTheUser() throws Exception {
+		mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/users/demo-user")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"heightCm\":172.5,\"weightKg\":64,\"dateOfBirth\":\"2001-06-30\"}"))
+				.andExpect(status().isOk());
+
+		mvc.perform(get("/users/demo-user"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.heightCm").value(172.5))
+				.andExpect(jsonPath("$.weightKg").value(64.0))
+				.andExpect(jsonPath("$.dateOfBirth").value("2001-06-30"))
+				.andExpect(jsonPath("$.dailyWaterIntakeGoal").value(2.5));
+	}
+
+	@Test
 	void sleepAndStressAreStoredOncePerDayAndQueriedByRange() throws Exception {
 		LocalDate today = LocalDate.now(ZoneOffset.UTC);
 		String bed = today.minusDays(1) + "T23:00:00";

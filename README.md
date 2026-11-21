@@ -114,6 +114,10 @@ drinks logged before local dates existed count on their UTC date.
 
 - `GET /users/{userId}` and `GET /users/{userId}/daily-goal`
 - `POST /users/add`
+- `PATCH /users/{userId}` with body `{"heightCm":172,"weightKg":64.5,"dateOfBirth":"2001-11-14"}`:
+  updates the profile's body data; fields left out are unchanged. Height 50–260 cm,
+  weight 20–400 kg, date of birth from 1900 to yesterday. The app computes the age from
+  the date of birth.
 - `POST /waterIntake/logIntake` with body
   `{"userId":"...","amount":0.25,"date":"2026-11-21","dateTime":"2026-11-21T17:30:00"}`
   (`date` and `dateTime` optional)
