@@ -16,7 +16,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** All dates and times are UTC. */
+/**
+ * Days are the user's local days: the app sends its local date when logging and when asking for
+ * a day or a week. {@code dateTime} values are UTC. When no date is given, today's UTC date is used.
+ */
 @RestController
 @RequestMapping("/waterIntake")
 public class WaterIntakeController {
@@ -33,14 +36,23 @@ public class WaterIntakeController {
         this.clock = clock;
     }
 
-    /** Total litres drunk on {@code date} (today when omitted). */
+    /** Total litres drunk on the local {@code date} (today when omitted). */
     @GetMapping("/daily/{userId}")
     public double getDailyIntake(
             @PathVariable String userId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         LocalDate day = date != null ? date : LocalDate.now(clock);
-        return recordsBetween(userId, day.atStartOfDay(), day.plusDays(1).atStartOfDay())
+        return recordsForLocalDays(userId, day, day)
                 .stream().mapToDouble(WaterIntakeRecord::getAmount).sum();
+    }
+
+    /** Drinks logged on the local {@code date} (today when omitted), oldest first. */
+    @GetMapping("/records/{userId}")
+    public List<WaterIntakeRecord> getDayRecords(
+            @PathVariable String userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        LocalDate day = date != null ? date : LocalDate.now(clock);
+        return recordsForLocalDays(userId, day, day);
     }
 
     @PostMapping("/updateGoal/{userId}")
@@ -63,31 +75,45 @@ public class WaterIntakeController {
 
     @PostMapping("/logIntake")
     public ResponseEntity<WaterIntakeRecord> logWaterIntake(@Valid @RequestBody WaterIntakeDto intakeDto) {
+        LocalDateTime dateTime = intakeDto.dateTime() != null ? intakeDto.dateTime() : LocalDateTime.now(clock);
+        LocalDate date = intakeDto.date() != null ? intakeDto.date() : dateTime.toLocalDate();
+        DateRanges.requireNotInFuture(date, clock);
         if (!userRepository.existsById(intakeDto.userId())) {
             return ResponseEntity.notFound().build();
         }
         WaterIntakeRecord record = new WaterIntakeRecord();
         record.setUserId(intakeDto.userId());
         record.setAmount(intakeDto.amount());
-        record.setDateTime(intakeDto.dateTime() != null ? intakeDto.dateTime() : LocalDateTime.now(clock));
+        record.setDateTime(dateTime);
+        record.setDate(date);
         return ResponseEntity.ok(waterIntakeRecordRepository.save(record));
     }
 
-    /** Litres per day for the current week, Monday to Sunday, with 0 for days without records. */
+    /**
+     * Litres per local day for the week (Monday to Sunday) containing {@code date} (today when
+     * omitted), with 0 for days without records.
+     */
     @GetMapping("/weeklySummary/{userId}")
-    public Map<LocalDate, Double> getWeeklyIntakeSummary(@PathVariable String userId) {
-        LocalDate startOfWeek = LocalDate.now(clock).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    public Map<LocalDate, Double> getWeeklyIntakeSummary(
+            @PathVariable String userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        LocalDate day = date != null ? date : LocalDate.now(clock);
+        LocalDate startOfWeek = day.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
         Map<LocalDate, Double> summary = new LinkedHashMap<>();
         for (int i = 0; i < 7; i++) {
             summary.put(startOfWeek.plusDays(i), 0.0);
         }
-        recordsBetween(userId, startOfWeek.atStartOfDay(), startOfWeek.plusDays(7).atStartOfDay())
-                .forEach(r -> summary.merge(r.getDateTime().toLocalDate(), r.getAmount(), Double::sum));
+        recordsForLocalDays(userId, startOfWeek, startOfWeek.plusDays(6))
+                .forEach(r -> summary.merge(r.effectiveDate(), r.getAmount(), Double::sum));
         return summary;
     }
 
     private List<WaterIntakeRecord> recordsBetween(String userId, LocalDateTime start, LocalDateTime end) {
-        return waterIntakeRecordRepository
-                .findInRange(userId, start, end);
+        return waterIntakeRecordRepository.findInRange(userId, start, end);
+    }
+
+    private List<WaterIntakeRecord> recordsForLocalDays(String userId, LocalDate from, LocalDate to) {
+        return waterIntakeRecordRepository.findForLocalDays(
+                userId, from, to, from.atStartOfDay(), to.plusDays(1).atStartOfDay());
     }
 }

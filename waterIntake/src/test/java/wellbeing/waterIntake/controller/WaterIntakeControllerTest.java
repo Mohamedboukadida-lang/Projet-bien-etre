@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -60,13 +61,17 @@ class WaterIntakeControllerTest {
     private UserRepository users;
 
     private static WaterIntakeRecord record(String isoDateTime, double amount) {
-        return new WaterIntakeRecord(null, "u1", amount, LocalDateTime.parse(isoDateTime));
+        return new WaterIntakeRecord(null, "u1", amount, LocalDateTime.parse(isoDateTime), null);
+    }
+
+    private static WaterIntakeRecord record(String isoDateTime, double amount, String localDate) {
+        return new WaterIntakeRecord(null, "u1", amount, LocalDateTime.parse(isoDateTime), LocalDate.parse(localDate));
     }
 
     @Test
     void dailyIntakeDefaultsToTodayAndSumsRecords() throws Exception {
-        given(records.findInRange(
-                "u1", LocalDateTime.parse("2026-11-18T00:00"), LocalDateTime.parse("2026-11-19T00:00")))
+        given(records.findForLocalDays("u1", LocalDate.parse("2026-11-18"), LocalDate.parse("2026-11-18"),
+                LocalDateTime.parse("2026-11-18T00:00"), LocalDateTime.parse("2026-11-19T00:00")))
                 .willReturn(List.of(record("2026-11-18T08:00", 0.25), record("2026-11-18T09:00", 0.5)));
 
         mvc.perform(get("/waterIntake/daily/u1"))
@@ -75,16 +80,31 @@ class WaterIntakeControllerTest {
     }
 
     @Test
+    void dailyIntakeUsesTheRequestedLocalDay() throws Exception {
+        given(records.findForLocalDays("u1", LocalDate.parse("2026-11-19"), LocalDate.parse("2026-11-19"),
+                LocalDateTime.parse("2026-11-19T00:00"), LocalDateTime.parse("2026-11-20T00:00")))
+                .willReturn(List.of(record("2026-11-18T23:30", 0.5, "2026-11-19")));
+
+        mvc.perform(get("/waterIntake/daily/u1").param("date", "2026-11-19"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("0.5"));
+        mvc.perform(get("/waterIntake/records/u1").param("date", "2026-11-19"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].date").value("2026-11-19"));
+    }
+
+    @Test
     void weeklySummaryContainsAllSevenDaysInOrder() throws Exception {
-        given(records.findInRange(
-                "u1", LocalDateTime.parse("2026-11-16T00:00"), LocalDateTime.parse("2026-11-23T00:00")))
+        given(records.findForLocalDays("u1", LocalDate.parse("2026-11-16"), LocalDate.parse("2026-11-22"),
+                LocalDateTime.parse("2026-11-16T00:00"), LocalDateTime.parse("2026-11-23T00:00")))
+                // A drink at 23:30 UTC on the 16th that the user logged on their local 17th counts for the 17th.
                 .willReturn(List.of(record("2026-11-16T08:00", 1.0), record("2026-11-16T20:00", 0.5),
-                        record("2026-11-18T09:00", 2.0)));
+                        record("2026-11-16T23:30", 0.25, "2026-11-17"), record("2026-11-18T09:00", 2.0)));
 
         mvc.perform(get("/waterIntake/weeklySummary/u1"))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
-                        {"2026-11-16":1.5,"2026-11-17":0.0,"2026-11-18":2.0,"2026-11-19":0.0,
+                        {"2026-11-16":1.5,"2026-11-17":0.25,"2026-11-18":2.0,"2026-11-19":0.0,
                          "2026-11-20":0.0,"2026-11-21":0.0,"2026-11-22":0.0}"""));
     }
 
@@ -97,7 +117,29 @@ class WaterIntakeControllerTest {
                         .content("{\"userId\":\"u1\",\"amount\":0.25}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.amount").value(0.25))
-                .andExpect(jsonPath("$.dateTime").value("2026-11-18T10:00:00"));
+                .andExpect(jsonPath("$.dateTime").value("2026-11-18T10:00:00"))
+                .andExpect(jsonPath("$.date").value("2026-11-18"));
+    }
+
+    @Test
+    void logIntakeStoresTheUsersLocalDate() throws Exception {
+        given(users.existsById("u1")).willReturn(true);
+        given(records.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+        // 10:00 UTC on the 18th is already the 19th for a user at UTC+14.
+        mvc.perform(post("/waterIntake/logIntake").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"u1\",\"amount\":0.25,\"date\":\"2026-11-19\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dateTime").value("2026-11-18T10:00:00"))
+                .andExpect(jsonPath("$.date").value("2026-11-19"));
+    }
+
+    @Test
+    void logIntakeRejectsFutureDate() throws Exception {
+        mvc.perform(post("/waterIntake/logIntake").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"u1\",\"amount\":0.25,\"date\":\"2026-11-25\"}"))
+                .andExpect(status().isBadRequest());
+        verify(records, never()).save(any());
     }
 
     @Test

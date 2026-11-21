@@ -89,12 +89,17 @@ class HistoricalIntakeTrends extends StatelessWidget {
           sideTitles: SideTitles(
             showTitles: true,
             reservedSize: 32,
-            getTitlesWidget: (value, meta) => SideTitleWidget(
-              meta: meta,
-              child: Text(value.toStringAsFixed(1),
-                  style: const TextStyle(
-                      fontSize: 10, color: AppColors.grayColor)),
-            ),
+            interval: 1,
+            // Whole litres only; fl_chart also labels the (non-round) max,
+            // which would overlap the label below it.
+            getTitlesWidget: (value, meta) => value != value.roundToDouble()
+                ? const SizedBox.shrink()
+                : SideTitleWidget(
+                    meta: meta,
+                    child: Text(value.toStringAsFixed(1),
+                        style: const TextStyle(
+                            fontSize: 10, color: AppColors.grayColor)),
+                  ),
           ),
         ),
         bottomTitles: AxisTitles(

@@ -41,39 +41,37 @@ class StressTodayCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              const SizedBox(height: 8),
               Expanded(
-                child: Row(
+                // Stacked, so labels stay on one line on narrow (360 dp) phones.
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       level == null ? "📝" : stressLevelEmojis[level - 1],
-                      style: const TextStyle(fontSize: 28),
+                      style: const TextStyle(fontSize: 26),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            level == null
-                                ? "Not logged"
-                                : stressLevelLabels[level - 1],
-                            style: const TextStyle(
-                              color: AppColors.blackColor,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            level == null
-                                ? "How do you feel?"
-                                : "Level $level of 5",
-                            style: const TextStyle(
-                              color: AppColors.grayColor,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 4),
+                    Text(
+                      level == null
+                          ? "Not logged"
+                          : stressLevelLabels[level - 1],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.blackColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      level == null ? "How do you feel?" : "Level $level of 5",
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.grayColor,
+                        fontSize: 10,
                       ),
                     ),
                   ],

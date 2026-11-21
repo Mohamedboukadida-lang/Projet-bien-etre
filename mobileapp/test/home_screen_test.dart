@@ -33,8 +33,12 @@ void main() {
         return http.Response(
             jsonEncode({'id': 'u1', 'username': 'Amira Ben Salah', 'dailyWaterIntakeGoal': 2.5}), 200);
       }
-      if (path == '/waterIntake/daily/u1') return http.Response('1.25', 200);
-      if (path == '/waterIntake/range/u1') {
+      if (path == '/waterIntake/daily/u1') {
+        expect(request.url.queryParameters['date'], _date(today));
+        return http.Response('1.25', 200);
+      }
+      if (path == '/waterIntake/records/u1') {
+        expect(request.url.queryParameters['date'], _date(today));
         return http.Response(
             jsonEncode([
               {'amount': 0.75, 'dateTime': _utc(today.add(const Duration(hours: 8)))},

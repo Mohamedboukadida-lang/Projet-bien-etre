@@ -28,6 +28,11 @@ final class HuggingFaceCalls {
         } catch (RestClientResponseException e) {
             int code = e.getStatusCode().value();
             String upstream = e.getResponseBodyAsString();
+            if (code == 402) {
+                throw new AiServiceException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "The Hugging Face account behind HF_TOKEN has no Inference Providers credits left. "
+                                + "Add credits or subscribe to PRO on huggingface.co, or use another token.", e);
+            }
             if (code == 401 || code == 403) {
                 throw new AiServiceException(HttpStatus.BAD_GATEWAY,
                         "Hugging Face refused the request for model " + model

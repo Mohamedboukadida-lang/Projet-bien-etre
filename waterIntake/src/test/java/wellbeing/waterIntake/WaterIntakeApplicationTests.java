@@ -16,7 +16,9 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.mongodb.MongoDBContainer;
 
+import wellbeing.waterIntake.collections.WaterIntakeRecord;
 import wellbeing.waterIntake.repository.UserRepository;
+import wellbeing.waterIntake.repository.WaterIntakeRecordRepository;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -57,6 +59,30 @@ class WaterIntakeApplicationTests {
 		mvc.perform(get("/waterIntake/daily/demo-user"))
 				.andExpect(status().isOk())
 				.andExpect(content().string("0.75"));
+	}
+
+	@Test
+	void waterDaysFollowTheUsersLocalDateAndKeepOlderRecords(@Autowired WaterIntakeRecordRepository records)
+			throws Exception {
+		LocalDate today = LocalDate.now(ZoneOffset.UTC);
+		LocalDate tomorrow = today.plusDays(1);
+		// A record from before local dates existed: counted on its UTC date.
+		records.save(new WaterIntakeRecord(null, "tz-user", 0.4, today.atTime(12, 0), null));
+		users.save(new wellbeing.waterIntake.collections.User("tz-user", "TZ", "tz@example.com", 2.0));
+		// Logged late in the UTC day by someone already on their local tomorrow.
+		mvc.perform(post("/waterIntake/logIntake").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"userId\":\"tz-user\",\"amount\":0.3,\"date\":\"" + tomorrow + "\"}"))
+				.andExpect(status().isOk());
+
+		mvc.perform(get("/waterIntake/daily/tz-user").param("date", today.toString()))
+				.andExpect(content().string("0.4"));
+		mvc.perform(get("/waterIntake/daily/tz-user").param("date", tomorrow.toString()))
+				.andExpect(content().string("0.3"));
+		mvc.perform(get("/waterIntake/records/tz-user").param("date", tomorrow.toString()))
+				.andExpect(jsonPath("$.length()").value(1))
+				.andExpect(jsonPath("$[0].amount").value(0.3));
+		mvc.perform(get("/waterIntake/weeklySummary/tz-user").param("date", tomorrow.toString()))
+				.andExpect(jsonPath("$['" + tomorrow + "']").value(0.3));
 	}
 
 	@Test

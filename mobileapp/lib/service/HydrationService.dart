@@ -41,33 +41,45 @@ class HydrationService {
     return true;
   }
 
-  /// Litres drunk today (UTC day, as computed by the service).
-  Future<double> fetchCurrentIntake(String userId) async =>
-      double.parse(await _api.get('/waterIntake/daily/$userId'));
+  /// Litres drunk today (the device's local day).
+  Future<double> fetchCurrentIntake(String userId, {DateTime? now}) async =>
+      double.parse(await _api.get('/waterIntake/daily/$userId',
+          query: {'date': localDate(now ?? DateTime.now())}));
 
-  Future<bool> logWaterIntake(String userId, double amount) async {
-    await _api.post('/waterIntake/logIntake', {'userId': userId, 'amount': amount});
+  /// Logs a drink now, counted for today (the device's local day). The time
+  /// (UTC) and the local date describe the same moment.
+  Future<bool> logWaterIntake(String userId, double amount, {DateTime? now}) async {
+    final at = now ?? DateTime.now();
+    await _api.post('/waterIntake/logIntake', {
+      'userId': userId,
+      'amount': amount,
+      'dateTime': at.toUtc().toIso8601String().replaceFirst('Z', ''),
+      'date': localDate(at),
+    });
     return true;
   }
 
-  /// Litres per day for the current week, Monday first (7 values).
-  Future<List<double>> fetchWeeklySummary(String userId) async {
-    final Map<String, dynamic> data =
-        jsonDecode(await _api.get('/waterIntake/weeklySummary/$userId'));
+  /// Litres per local day for the current week, Monday first (7 values).
+  Future<List<double>> fetchWeeklySummary(String userId, {DateTime? now}) async {
+    final Map<String, dynamic> data = jsonDecode(await _api.get(
+        '/waterIntake/weeklySummary/$userId',
+        query: {'date': localDate(now ?? DateTime.now())}));
     final days = data.keys.toList()..sort();
     return [for (final day in days) (data[day] as num).toDouble()];
   }
 
-  /// Drinks logged during today's UTC day, the same day [fetchCurrentIntake]
-  /// sums, so the two always agree.
+  /// Drinks logged today (the device's local day), the same ones
+  /// [fetchCurrentIntake] sums.
   Future<List<IntakeEntry>> fetchTodayEntries(String userId, {DateTime? now}) async {
-    final utc = (now ?? DateTime.now()).toUtc();
-    final start = DateTime.utc(utc.year, utc.month, utc.day);
-    final end = start.add(const Duration(days: 1));
-    String iso(DateTime d) => d.toIso8601String().replaceFirst('Z', '');
     final List<dynamic> data = jsonDecode(await _api.get(
-        '/waterIntake/range/$userId',
-        query: {'startDate': iso(start), 'endDate': iso(end)}));
+        '/waterIntake/records/$userId',
+        query: {'date': localDate(now ?? DateTime.now())}));
     return [for (final e in data) IntakeEntry.fromJson(e as Map<String, dynamic>)];
+  }
+
+  /// `YYYY-MM-DD` of [d] in the device's time zone.
+  static String localDate(DateTime d) {
+    final l = d.toLocal();
+    return '${l.year}-${l.month.toString().padLeft(2, '0')}-${l.day.toString().padLeft(2, '0')}';
   }
 }

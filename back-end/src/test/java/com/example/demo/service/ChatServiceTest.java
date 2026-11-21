@@ -115,6 +115,19 @@ class ChatServiceTest {
     }
 
     @Test
+    void explainsMissingCredits() {
+        ChatService service = service("test-token");
+        server.expect(requestTo(BASE + "/v1/chat/completions"))
+                .andRespond(withStatus(HttpStatus.PAYMENT_REQUIRED).body(
+                        "{\"error\":\"Purchase pre-paid credits to continue using Inference Providers.\"}"));
+
+        assertThatThrownBy(() -> service.chat(new ChatRequest(List.of(new ChatMessage("user", "hi")), null)))
+                .isInstanceOf(AiServiceException.class)
+                .hasMessageContaining("no Inference Providers credits")
+                .extracting(e -> ((AiServiceException) e).getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    @Test
     void mapsAuthErrorToBadGatewayWithHint() {
         ChatService service = service("test-token");
         server.expect(requestTo(BASE + "/v1/chat/completions"))

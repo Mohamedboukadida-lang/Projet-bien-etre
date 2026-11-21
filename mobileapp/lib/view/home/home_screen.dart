@@ -249,16 +249,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   SizedBox(width: media.width * 0.05),
                   Expanded(
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         SleepCard(
-                          height: media.width * 0.55,
+                          height: media.width * 0.5,
                           today: _today,
                           entries: _sleep,
                           onTap: _logSleep,
                         ),
                         SizedBox(height: media.width * 0.05),
                         StressTodayCard(
-                          height: media.width * 0.35,
+                          height: media.width * 0.4,
                           entry: _todayStress,
                           onTap: _logStress,
                         ),

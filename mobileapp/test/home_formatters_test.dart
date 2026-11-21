@@ -24,6 +24,15 @@ void main() {
     expect(formatClock(DateTime(2026, 1, 1, 0, 30)), '12:30 am');
   });
 
+  test('local date uses the device day, not the UTC day', () {
+    // 23:30 UTC is already the next day for anyone east of UTC.
+    final lateUtc = DateTime.utc(2026, 11, 20, 23, 30);
+    final local = lateUtc.toLocal();
+    expect(HydrationService.localDate(lateUtc),
+        '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}');
+    expect(HydrationService.localDate(DateTime(2026, 3, 9, 0, 15)), '2026-03-09');
+  });
+
   test('parses service UTC times as local', () {
     final e = IntakeEntry.fromJson({'amount': 0.25, 'dateTime': '2026-11-21T10:00:00.123'});
     expect(e.time.isUtc, isFalse);

@@ -28,7 +28,9 @@ OpenAI-compatible Hugging Face router.
 - A **Hugging Face token** with the *Make calls to Inference Providers* permission:
   <https://huggingface.co/settings/tokens>. The default model
   `meta-llama/Llama-3.1-8B-Instruct` is gated: accept its licence on its Hugging Face page
-  with the same account, or pick another chat model with `HF_CHAT_MODEL`.
+  with the same account, or pick another chat model with `HF_CHAT_MODEL`. Inference
+  Providers calls use the account's credits: when they run out, Hugging Face answers
+  HTTP 402 and the chatbot says so; add credits or subscribe to PRO on huggingface.co.
 
 ## Quick start
 
@@ -105,14 +107,21 @@ AI service:
 - `POST /api/image-caption` with multipart `file`.
 - `POST /api/ask` with body `{"question":"...","context":"..."}`.
 
-Tracking service, users and hydration (amounts in litres, days in UTC):
+Tracking service, users and hydration (amounts in litres). Water days are the user's
+local days: the app sends its local date when logging a drink and when asking for a day
+or a week. `dateTime` values are UTC. Without a `date`, today's UTC date is used, and
+drinks logged before local dates existed count on their UTC date.
 
 - `GET /users/{userId}` and `GET /users/{userId}/daily-goal`
 - `POST /users/add`
-- `POST /waterIntake/logIntake` with body `{"userId":"...","amount":0.25}`
-- `GET /waterIntake/daily/{userId}?date=YYYY-MM-DD` (date defaults to today)
-- `GET /waterIntake/weeklySummary/{userId}` (Monday to Sunday, 0 for empty days)
-- `GET /waterIntake/range/{userId}?startDate=...&endDate=...` (ISO date-times)
+- `POST /waterIntake/logIntake` with body
+  `{"userId":"...","amount":0.25,"date":"2026-11-21","dateTime":"2026-11-21T17:30:00"}`
+  (`date` and `dateTime` optional)
+- `GET /waterIntake/daily/{userId}?date=YYYY-MM-DD`: litres drunk that day
+- `GET /waterIntake/records/{userId}?date=YYYY-MM-DD`: that day's drinks
+- `GET /waterIntake/weeklySummary/{userId}?date=YYYY-MM-DD`: Monday to Sunday of that
+  date's week, 0 for empty days
+- `GET /waterIntake/range/{userId}?startDate=...&endDate=...` (UTC date-times)
 - `POST /waterIntake/updateGoal/{userId}` with body `{"newGoal":2.5}`
 
 Tracking service, sleep and stress (the user's local dates and times; one entry per day,
@@ -159,4 +168,15 @@ when Docker is not available.
 
 ## Demos
 
-Screen recordings are in `demos/` and screenshots in `New folder/`.
+Screenshots are in `New folder/` and screen recordings in `demos/`. They were captured
+from the Flutter web build at phone size (1080×2400 screenshots, 720×1600 videos) with
+sample data, as of a Saturday at 6:30 pm in Tunisia:
+
+- `home dashboard.jpg`, `stress tracker.jpg`, `log sleep and stress.jpg`: the home screen
+- `drinking water reminder.jpg`: the hydration tracker
+- `ai coach.jpg`: the chatbot
+- `welcome page.jpg`, `login.jpg`, `registration.jpg`, `creating profile.jpg`, `profile.jpg`
+- `dashboard demo.mp4`, `hydration tracker.mp4`, `sleep tracking UI demo (1).mp4`
+  (logging sleep and stress)
+- `chatbotdemo.mp4` predates the Hugging Face integration: it shows the earlier echo
+  prototype.

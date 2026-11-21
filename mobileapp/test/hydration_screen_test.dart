@@ -28,7 +28,11 @@ void main() {
             200);
       }
       if (path.endsWith('/logIntake')) {
-        final amount = (jsonDecode(request.body)['amount'] as num).toDouble();
+        final body = jsonDecode(request.body);
+        expect(body['date'], HydrationService.localDate(DateTime.now()));
+        final sentAt = DateTime.parse('${body['dateTime']}Z');
+        expect(DateTime.now().difference(sentAt).inMinutes.abs(), lessThan(2));
+        final amount = (body['amount'] as num).toDouble();
         logged.add(amount);
         today += amount;
         return http.Response('{}', 200);
